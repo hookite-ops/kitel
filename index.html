@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+<meta name="theme-color" content="#0b1020">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<title>Kitel</title>
+<style>
+:root{
+  --bg:#0b1020;--bg2:#121a33;--card:#18223f;--line:#26325a;
+  --text:#eef2ff;--sub:#9aa6cc;--accent:#5ee6c8;--accent2:#7c8cff;--warn:#ffb85c;--bad:#ff6b8a;
+  --me:#2b3a74;--safe-b:env(safe-area-inset-bottom,0px);--safe-t:env(safe-area-inset-top,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Pretendard","Apple SD Gothic Neo","Noto Sans KR",sans-serif;overscroll-behavior:none}
+body{display:flex;flex-direction:column;height:100dvh;overflow:hidden;
+  background:radial-gradient(120% 60% at 80% -10%,#24306a 0%,transparent 60%),radial-gradient(90% 50% at -10% 110%,#103a44 0%,transparent 60%),var(--bg)}
+header{padding:calc(var(--safe-t) + 12px) 16px 10px;display:flex;align-items:center;gap:10px}
+.logo{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;box-shadow:0 6px 20px #5ee6c833}
+.logo svg{width:24px;height:24px}
+.ttl b{font-size:19px;letter-spacing:.5px}
+.ttl small{display:block;color:var(--sub);font-size:12px;margin-top:1px}
+.hbtn{margin-left:auto;background:var(--card);border:1px solid var(--line);color:var(--sub);border-radius:12px;width:40px;height:40px;font-size:18px}
+main{flex:1;min-height:0;position:relative}
+.view{position:absolute;inset:0;display:none;flex-direction:column}
+.view.on{display:flex}
+/* chat */
+#log{flex:1;overflow-y:auto;padding:8px 14px 12px;display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth}
+.msg{max-width:84%;padding:11px 14px;border-radius:18px;line-height:1.5;font-size:15.5px;white-space:pre-wrap;word-break:break-word;animation:pop .22s ease}
+.msg.bot{background:var(--card);border:1px solid var(--line);border-top-left-radius:6px;align-self:flex-start}
+.msg.me{background:var(--me);border-top-right-radius:6px;align-self:flex-end}
+.msg .t{display:block;font-size:11px;color:var(--sub);margin-top:4px}
+@keyframes pop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.typing{align-self:flex-start;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px 16px;display:flex;gap:5px}
+.typing i{width:7px;height:7px;border-radius:50%;background:var(--sub);animation:bl 1s infinite}
+.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+@keyframes bl{0%,100%{opacity:.3}50%{opacity:1}}
+#chips{display:flex;gap:8px;overflow-x:auto;padding:4px 14px 8px;scrollbar-width:none}
+#chips::-webkit-scrollbar{display:none}
+.chip{flex:none;background:#ffffff0d;border:1px solid var(--line);color:var(--text);border-radius:999px;padding:8px 13px;font-size:13.5px}
+.inbar{display:flex;gap:8px;padding:8px 12px 10px;background:linear-gradient(transparent,var(--bg) 30%)}
+.inbar input{flex:1;min-width:0;background:var(--card);border:1px solid var(--line);color:var(--text);border-radius:22px;padding:13px 16px;font-size:16px;outline:none}
+.inbar input:focus{border-color:var(--accent2)}
+.send{width:48px;height:48px;border-radius:50%;border:0;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#0b1020;font-size:20px;font-weight:700;flex:none}
+/* lists */
+.pane{flex:1;overflow-y:auto;padding:6px 14px 20px}
+.addbox{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px;display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.addbox .row{display:flex;gap:8px}
+.addbox input{flex:1;min-width:0;background:var(--bg2);border:1px solid var(--line);color:var(--text);border-radius:12px;padding:11px 12px;font-size:16px;outline:none;color-scheme:dark}
+.btn{border:0;border-radius:12px;padding:11px 16px;font-size:15px;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#0b1020}
+.sec{color:var(--sub);font-size:13px;font-weight:700;margin:16px 4px 8px;display:flex;justify-content:space-between}
+.item{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 12px;margin-bottom:8px;animation:pop .2s ease}
+.chk{width:26px;height:26px;border-radius:9px;border:2px solid var(--accent);flex:none;display:grid;place-items:center;color:#0b1020;font-weight:900;font-size:15px;background:transparent}
+.item.done .chk{background:var(--accent)}
+.item.done .txt{text-decoration:line-through;color:var(--sub)}
+.txt{flex:1;min-width:0;font-size:15.5px;line-height:1.35}
+.txt small{display:block;color:var(--sub);font-size:12.5px;margin-top:2px}
+.del{background:none;border:0;color:var(--sub);font-size:20px;width:34px;height:34px;flex:none}
+.time{flex:none;min-width:58px;text-align:center;background:var(--bg2);border-radius:10px;padding:7px 4px;font-weight:800;font-size:14px;color:var(--accent)}
+.time.past{color:var(--sub);opacity:.6}
+.empty{text-align:center;color:var(--sub);padding:40px 10px;font-size:14.5px;line-height:1.6}
+/* tabs */
+nav{display:flex;border-top:1px solid var(--line);background:#0b1020ee;padding-bottom:var(--safe-b);backdrop-filter:blur(10px)}
+nav button{flex:1;background:none;border:0;color:var(--sub);padding:10px 0 9px;font-size:12px;display:flex;flex-direction:column;align-items:center;gap:3px;position:relative}
+nav button span{font-size:21px;filter:grayscale(1);opacity:.7}
+nav button.on{color:var(--text)}
+nav button.on span{filter:none;opacity:1}
+nav .badge{position:absolute;top:5px;left:calc(50% + 8px);background:var(--bad);color:#fff;font-size:10.5px;font-weight:800;border-radius:9px;padding:1px 6px}
+#toast{position:fixed;left:50%;top:calc(var(--safe-t) + 14px);transform:translate(-50%,-140%);background:var(--card);border:1px solid var(--accent);color:var(--text);padding:12px 16px;border-radius:16px;font-size:14.5px;z-index:9;transition:transform .3s;max-width:90%;box-shadow:0 10px 30px #0008}
+#toast.on{transform:translate(-50%,0)}
+/* sheet */
+#sheet{position:fixed;inset:0;background:#0009;display:none;align-items:flex-end;z-index:8}
+#sheet.on{display:flex}
+#sheet .box{background:var(--bg2);width:100%;border-radius:22px 22px 0 0;padding:18px 16px calc(18px + var(--safe-b));border-top:1px solid var(--line)}
+#sheet h3{margin:0 0 12px;font-size:17px}
+#sheet .opt{display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);color:var(--text);border-radius:14px;padding:14px;font-size:15px;margin-bottom:8px}
+#sheet .opt.red{color:var(--bad)}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"><svg viewBox="0 0 24 24" fill="none"><path d="M12 2l7 7-7 9-7-9 7-7z" fill="#0b1020"/><path d="M12 18c0 2 -2 3 -3 4M12 18c1 1 3 1 3 3" stroke="#0b1020" stroke-width="1.6" stroke-linecap="round"/></svg></div>
+  <div class="ttl"><b>Kitel</b><small id="sub">맡기면 날아가서 해결해요</small></div>
+  <button class="hbtn" id="menuBtn" aria-label="메뉴">⋯</button>
+</header>
+
+<main>
+  <section class="view on" id="v-chat">
+    <div id="log"></div>
+    <div id="chips"></div>
+    <div class="inbar">
+      <input id="in" placeholder="Kitel에게 말하기…" autocomplete="off" enterkeyhint="send">
+      <button class="send" id="sendBtn" aria-label="보내기">↑</button>
+    </div>
+  </section>
+
+  <section class="view" id="v-todo">
+    <div class="pane">
+      <div class="addbox"><div class="row">
+        <input id="todoIn" placeholder="할 일을 입력하세요" enterkeyhint="done">
+        <button class="btn" id="todoAdd">추가</button>
+      </div></div>
+      <div id="todoList"></div>
+    </div>
+  </section>
+
+  <section class="view" id="v-cal">
+    <div class="pane">
+      <div class="addbox">
+        <input id="evTitle" placeholder="일정 이름 (예: 치과)">
+        <div class="row">
+          <input id="evDate" type="date">
+          <input id="evTime" type="time">
+        </div>
+        <button class="btn" id="evAdd">일정 추가</button>
+      </div>
+      <div id="evList"></div>
+    </div>
+  </section>
+</main>
+
+<nav>
+  <button class="on" data-v="chat"><span>💬</span>대화</button>
+  <button data-v="todo"><span>✅</span>할 일<em class="badge" id="todoBadge" hidden></em></button>
+  <button data-v="cal"><span>📅</span>일정<em class="badge" id="calBadge" hidden></em></button>
+</nav>
+
+<div id="toast"></div>
+<div id="sheet"><div class="box">
+  <h3>Kitel 설정</h3>
+  <button class="opt" id="optNotif">🔔 알림 켜기</button>
+  <button class="opt" id="optClearChat">🧹 대화 기록 지우기</button>
+  <button class="opt" id="optClearDone">✅ 완료한 할 일 정리</button>
+  <button class="opt red" id="optReset">⚠️ 모든 데이터 초기화</button>
+  <button class="opt" id="optClose">닫기</button>
+</div></div>
+
+<script>
+(()=>{
+"use strict";
+/* ---------- storage ---------- */
+const S={
+  get(k,d){try{const v=localStorage.getItem("kitel."+k);return v?JSON.parse(v):d}catch(e){return d}},
+  set(k,v){try{localStorage.setItem("kitel."+k,JSON.stringify(v))}catch(e){}}
+};
+let todos=S.get("todos",[]);      // {id,text,done,created,doneAt}
+let events=S.get("events",[]);    // {id,title,date:'YYYY-MM-DD',time:'HH:MM'|'',notified}
+let memos=S.get("memos",[]);      // {id,text,created}
+let chat=S.get("chat",[]);        // {who,text,ts}
+let prof=S.get("prof",{name:""});
+let ctx={lastList:null,lastIds:[]}; // 번호 지칭용 맥락
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const save=()=>{S.set("todos",todos);S.set("events",events);S.set("memos",memos);S.set("prof",prof);S.set("chat",chat.slice(-200));renderAll()};
+
+/* ---------- date utils ---------- */
+const pad=n=>String(n).padStart(2,"0");
+const ymd=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+const today=()=>{const d=new Date();d.setHours(0,0,0,0);return d};
+const addDays=(d,n)=>{const x=new Date(d);x.setDate(x.getDate()+n);return x};
+const WD=["일","월","화","수","목","금","토"];
+function dateLabel(s){
+  const t=ymd(today());if(s===t)return "오늘";
+  if(s===ymd(addDays(today(),1)))return "내일";
+  if(s===ymd(addDays(today(),2)))return "모레";
+  if(s===ymd(addDays(today(),-1)))return "어제";
+  const d=new Date(s+"T00:00");return (d.getMonth()+1)+"월 "+d.getDate()+"일 ("+WD[d.getDay()]+")";
+}
+function timeLabel(t){
+  if(!t)return "하루 종일";
+  let [h,m]=t.split(":").map(Number);const ap=h<12?"오전":"오후";let hh=h%12||12;
+  return ap+" "+hh+"시"+(m?" "+m+"분":"");
+}
+const evMs=e=>new Date(e.date+"T"+(e.time||"23:59")).getTime();
+
+/* 자연어 날짜/시간 해석 */
+function parseWhen(text){
+  let s=" "+text+" ",date=null,time=null,hit=false;
+  const T=today();
+  const rel={"오늘":0,"금일":0,"내일":1,"낼":1,"모레":2,"내일모레":2,"글피":3};
+  for(const k of ["내일모레","오늘","금일","내일","모레","글피","낼"]){
+    const re=new RegExp("(^|\\s)"+k+"(은|에|에는|도|까지)?(?=\\s)");
+    if(re.test(s)){date=addDays(T,rel[k]);s=s.replace(re," ");hit=true;break}
+  }
+  let m;
+  if(!date&&(m=s.match(/(\d{1,2})\s*월\s*(\d{1,2})\s*일(에|에는|까지)?/))){
+    let d=new Date(T.getFullYear(),+m[1]-1,+m[2]);if(d<T)d.setFullYear(d.getFullYear()+1);
+    date=d;s=s.replace(m[0]," ");hit=true;
+  }
+  if(!date&&(m=s.match(/(\d{1,2})\s*일(에|에는|까지)?(?=\s)/))&&!/\d\s*일\s*(동안|간)/.test(s)){
+    let d=new Date(T.getFullYear(),T.getMonth(),+m[1]);if(d<T)d.setMonth(d.getMonth()+1);
+    date=d;s=s.replace(m[0]," ");hit=true;
+  }
+  if(!date&&(m=s.match(/(\d+)\s*일\s*(뒤|후)(에)?/))){date=addDays(T,+m[1]);s=s.replace(m[0]," ");hit=true}
+  if(!date&&(m=s.match(/(다음\s*주|담주|이번\s*주)?\s*(월|화|수|목|금|토|일)요일(에|에는|까지)?/))){
+    const wd=WD.indexOf(m[2]);let diff=(wd-T.getDay()+7)%7;
+    if(m[1]&&/다음|담/.test(m[1]))diff+=diff===0?7:(wd>T.getDay()?7:0);
+    if(!m[1]&&diff===0)diff=0;
+    date=addDays(T,diff);s=s.replace(m[0]," ");hit=true;
+  }
+  // 시간
+  if((m=s.match(/(새벽|아침|오전|낮|점심|오후|저녁|밤)?\s*(\d{1,2})\s*시\s*(반|(\d{1,2})\s*분)?(에|까지|쯤)?/))){
+    let h=+m[2],mi=m[3]==="반"?30:(m[4]?+m[4]:0),ap=m[1]||"";
+    if(/오후|저녁|밤/.test(ap)&&h<12)h+=12;
+    else if(/낮|점심/.test(ap)&&h<6)h+=12;
+    else if(!ap&&h>=1&&h<=7)h+=12;
+    if(/새벽|아침|오전/.test(ap)&&h===12)h=0;
+    if(h<24){time=pad(h)+":"+pad(mi);s=s.replace(m[0]," ");hit=true}
+  }else if((m=s.match(/(\d{1,2}):(\d{2})/))){
+    time=pad(+m[1])+":"+m[2];s=s.replace(m[0]," ");hit=true;
+  }
+  if(time&&(!date||ymd(date)===ymd(T))){ // 오늘인데 이미 지난 오전 시각이면 오후로
+    const ap=(m&&m[1])||"";const n=new Date();let [h,mi]=time.split(":").map(Number);
+    if(!/새벽|아침|오전|오후|저녁|밤|낮|점심/.test(ap)&&h<12&&h*60+mi<=n.getHours()*60+n.getMinutes()){h+=12;time=pad(h)+":"+pad(mi)}
+  }
+  if(time&&!date){ // 시간만: 이미 지났으면 내일
+    date=T;const n=new Date();const [h,mi]=time.split(":").map(Number);
+    if(h*60+mi<=n.getHours()*60+n.getMinutes())date=addDays(T,1);
+  }
+  return {hit,date:date?ymd(date):null,time,rest:s.replace(/\s+/g," ").trim()};
+}
+function cleanTitle(t){
+  return t.replace(/(일정|약속|스케줄)\s*(으로)?\s*(추가|등록|잡아|넣어|저장|기록)?\s*(해\s*줘|해줘|해\s*주세요|해|좀)?/g," ")
+   .replace(/(추가|등록|저장|기억|넣어)\s*(해\s*줘|해줘|해\s*주세요|해|좀|줘)?/g," ")
+   .replace(/(해야\s*(해|돼|됨|함|한다|된다)|있어|있음|있다|가야\s*(해|돼)|잡혀\s*있어)/g," ")
+   .replace(/(할\s*일|투두|todo)\s*(에|로|으로)?/gi," ")
+   .replace(/[.!?~]+$/,"").replace(/\s+(에|은|는|이|가|을|를)$/,"").replace(/^(나|저|난|나는|저는)\s+/,"").replace(/\s+/g," ").trim();
+}
+
+/* ---------- 응답 엔진 ---------- */
+const pick=a=>a[Math.floor(Math.random()*a.length)];
+const nm=()=>prof.name?prof.name+"님":"";
+function pendingTodos(){return todos.filter(t=>!t.done)}
+function upcoming(){const n=Date.now()-60*60*1000;return events.filter(e=>evMs(e)>=n).sort((a,b)=>evMs(a)-evMs(b))}
+
+function listTodos(){
+  const p=pendingTodos();
+  if(!p.length){ctx={lastList:null,lastIds:[]};return pick(["남은 할 일이 없어요! 🎉 완전 깔끔해요.","할 일 목록이 비었어요. 오늘은 여유롭게 보내도 되겠네요 😌"])}
+  ctx={lastList:"todo",lastIds:p.map(t=>t.id)};
+  return "📝 남은 할 일 "+p.length+"개\n"+p.map((t,i)=>(i+1)+". "+t.text).join("\n")+"\n\n\"1번 완료\" 또는 \"2번 삭제\"처럼 말해 주세요.";
+}
+function listEvents(filter){
+  let list=upcoming(),label="다가오는 일정";
+  if(filter){list=events.filter(e=>e.date===filter).sort((a,b)=>evMs(a)-evMs(b));label=dateLabel(filter)+" 일정"}
+  if(!list.length){ctx={lastList:null,lastIds:[]};return filter?dateLabel(filter)+"은 비어 있어요. 자유 시간이에요 🪁":"잡힌 일정이 없어요. \"내일 3시 치과\"처럼 말하면 바로 넣어 드릴게요."}
+  list=list.slice(0,10);
+  ctx={lastList:"event",lastIds:list.map(e=>e.id)};
+  return "📅 "+label+"\n"+list.map((e,i)=>(i+1)+". "+(filter?"":dateLabel(e.date)+" ")+timeLabel(e.time)+" · "+e.title).join("\n");
+}
+function briefing(){
+  const t=ymd(today()),te=events.filter(e=>e.date===t).sort((a,b)=>evMs(a)-evMs(b)),p=pendingTodos();
+  const h=new Date().getHours();
+  const hi=h<5?"늦은 밤이에요":h<11?"좋은 아침이에요":h<17?"좋은 오후예요":"좋은 저녁이에요";
+  let s=hi+(nm()?", "+nm():"")+"! ☀️\n";
+  s+=te.length?"오늘 일정 "+te.length+"개: "+te.map(e=>timeLabel(e.time)+" "+e.title).join(", "):"오늘은 잡힌 일정이 없어요.";
+  s+="\n"+(p.length?"남은 할 일 "+p.length+"개가 있어요.":"남은 할 일도 없어요!");
+  return s;
+}
+const HELP=`제가 할 수 있는 일이에요 🪁
+
+📝 할 일
+· "장보기 해야 해" / "할 일 추가 숙제"
+· "할 일 보여줘" · "1번 완료" · "2번 삭제"
+
+📅 일정
+· "내일 오후 3시 치과"
+· "금요일 7시 반 친구랑 저녁"
+· "오늘 일정" · "이번 주 일정"
+
+🗒️ 메모
+· "메모 와이파이 비번 1234" · "메모 보여줘"
+
+✨ 그 밖에
+· "브리핑" · "지금 몇 시야" · "12*34"
+· "짜장면 vs 짬뽕 골라줘" · "주사위" · "타이머 5분"
+· "내 이름은 후연이야"`;
+
+const TALK=[
+  [/^(안녕|하이|ㅎㅇ|hi|hello|헬로|반가)/i,()=>pick(["안녕하세요"+(nm()?" "+nm():"")+"! 오늘은 뭘 도와드릴까요? 🪁","반가워요! 할 일이나 일정 있으면 편하게 말해 주세요."])],
+  [/(넌|너는|너)\s*(누구|뭐야|이름)|이름이\s*뭐/,()=>"저는 Kitel이에요 🪁 할 일과 일정을 챙겨 주는 나만의 비서예요. 맡기면 날아가서 해결해요!"],
+  [/(고마|감사|땡큐|thx|thanks)/i,()=>pick(["천만에요! 언제든 불러 주세요 😊","도움이 됐다니 기뻐요!"])],
+  [/(사랑해|좋아해)/,()=>pick(["저도 같이 일하는 거 좋아요 🪁","헤헤, 그 말 들으니 바람 타고 더 높이 날 것 같아요!"])],
+  [/(심심|지루)/,()=>pick(["그럼 \"주사위\"를 굴려 볼까요? 아니면 미뤄 둔 할 일 하나를 처리해 보는 것도 좋아요 😏","재밌는 사실: 연은 2,000년도 더 전에 중국에서 처음 만들어졌대요 🪁"])],
+  [/(피곤|힘들|지쳤|졸려)/,()=>pick(["오늘 고생 많았어요. 물 한 잔 마시고 잠깐 쉬어 가요 💧","무리하지 마세요. 급하지 않은 할 일은 내일로 미뤄도 괜찮아요."])],
+  [/(배고|뭐\s*먹)/,()=>"오늘의 추천 메뉴는… "+pick(["김치찌개","치킨","떡볶이","돈까스","라멘","비빔밥","햄버거","마라탕","초밥","제육볶음"])+"! 🍽️"],
+  [/(잘\s*자|굿밤|굿나잇|잘게)/,()=>{const tm=events.filter(e=>e.date===ymd(addDays(today(),1)));return "잘 자요 🌙"+(tm.length?"\n내일은 일정이 "+tm.length+"개 있어요. 첫 일정: "+timeLabel(tm.sort((a,b)=>evMs(a)-evMs(b))[0].time)+" "+tm[0].title:"")}],
+  [/(ㅋㅋ|ㅎㅎ|하하)/,()=>pick(["😆","ㅋㅋ 기분 좋아 보여요!"])],
+  [/(날씨)/,()=>"날씨는 아직 못 봐요 🌤️ (인터넷 없이 동작하는 버전이라서요) 대신 일정은 확실히 챙길게요!"],
+];
+
+function respond(raw){
+  const q=raw.trim(),s=q.replace(/\s+/g," ");
+  let m;
+  if(!s)return "";
+  if(/^(도움|도움말|help|\?|사용법)$|뭐\s*(할\s*수|해\s*줄\s*수)|기능\s*(알려|뭐)/i.test(s))return HELP;
+  if(/^(브리핑|요약|오늘\s*요약)/.test(s)||/오늘\s*(뭐\s*해|어때|어떻게)/.test(s))return briefing();
+
+  // 이름
+  if((m=s.match(/(?:내|제)\s*이름은\s*([^\s]+?)(?:이야|야|입니다|이에요|예요|라고|이라고)?[.!]?$/))){
+    prof.name=m[1].replace(/(이야|야)$/,"");save();return "반가워요, "+prof.name+"님! 이제 이름으로 부를게요 😊";
+  }
+  // 번호 지칭 완료/삭제
+  if((m=s.match(/^(\d+)\s*번(?:\s*(?:일정|할\s*일))?\s*(.*)$/))){
+    const n=+m[1],act=m[2];
+    const isDel=/(삭제|지워|빼|취소|없애)/.test(act),isDone=/(완료|했|끝|다\s*함|체크)/.test(act);
+    if(isDel||isDone){
+      if(!ctx.lastList){ // 맥락 없으면 할 일 기준
+        const p=pendingTodos();ctx={lastList:"todo",lastIds:p.map(t=>t.id)};
+      }
+      const id=ctx.lastIds[n-1];
+      if(!id)return n+"번 항목을 찾지 못했어요. \"할 일 보여줘\"나 \"일정 보여줘\"로 번호를 먼저 확인해 주세요.";
+      if(ctx.lastList==="todo"){
+        const t=todos.find(x=>x.id===id);if(!t)return "이미 정리된 항목이에요.";
+        if(isDel){todos=todos.filter(x=>x.id!==id);save();return "🗑️ \""+t.text+"\" 삭제했어요."}
+        t.done=true;t.doneAt=Date.now();save();const left=pendingTodos().length;
+        return "✅ \""+t.text+"\" 완료! "+(left?"남은 할 일 "+left+"개.":"할 일을 전부 끝냈어요! 🎉");
+      }else{
+        const e=events.find(x=>x.id===id);if(!e)return "이미 정리된 일정이에요.";
+        events=events.filter(x=>x.id!==id);save();return "🗑️ "+dateLabel(e.date)+" \""+e.title+"\" 일정을 지웠어요.";
+      }
+    }
+  }
+  // 목록 보기
+  if(/(할\s*일|투두|todo).*(보여|목록|뭐|알려|확인|있|리스트)|^(할\s*일|투두|todo)\s*$/i.test(s))return listTodos();
+  if((/(일정|스케줄|약속).*(보여|목록|뭐|알려|확인|있|리스트|어때)/.test(s)||/(일정|스케줄)\s*(은|좀)?\s*[?？]?$/.test(s))&&!/(추가|등록|잡아|넣어)/.test(s)&&!parseWhen(s).time){
+    if(/이번\s*주/.test(s)){
+      const end=ymd(addDays(today(),7-today().getDay()));const t=ymd(today());
+      const list=events.filter(e=>e.date>=t&&e.date<=end).sort((a,b)=>evMs(a)-evMs(b));
+      if(!list.length)return "이번 주는 일정이 비어 있어요 🪁";
+      ctx={lastList:"event",lastIds:list.map(e=>e.id)};
+      return "📅 이번 주 일정\n"+list.map((e,i)=>(i+1)+". "+dateLabel(e.date)+" "+timeLabel(e.time)+" · "+e.title).join("\n");
+    }
+    const w=parseWhen(s);return listEvents(w.date);
+  }
+  if((m=s.match(/^(오늘|내일|모레)\s*(뭐|일정|뭐\s*있)/))){return listEvents(parseWhen(m[1]).date)}
+
+  // 이름으로 완료/삭제: "장보기 완료", "숙제 다 했어"
+  if((m=s.match(/^(.+?)\s*(완료|다\s*했어|다\s*했다|끝냈어|끝났어|했어|체크)[.!~]*$/))&&!/^\d/.test(s)){
+    const key=m[1].replace(/(을|를|은|는)$/,"").trim();
+    const t=pendingTodos().find(x=>x.text.includes(key)||key.includes(x.text));
+    if(t){t.done=true;t.doneAt=Date.now();save();return "✅ \""+t.text+"\" 완료! 수고했어요 👏"}
+  }
+  if((m=s.match(/^(.+?)\s*(삭제|지워|빼\s*줘|취소)/))){
+    const key=m[1].replace(/(을|를|은|는|일정|할\s*일)$/,"").trim();
+    const t=todos.find(x=>x.text.includes(key));
+    if(t){todos=todos.filter(x=>x!==t);save();return "🗑️ 할 일 \""+t.text+"\" 삭제했어요."}
+    const e=events.find(x=>x.title.includes(key));
+    if(e){events=events.filter(x=>x!==e);save();return "🗑️ "+dateLabel(e.date)+" \""+e.title+"\" 일정을 지웠어요."}
+  }
+
+  // 메모
+  if(/^메모.*(보여|목록|뭐|확인)|^메모\s*$/.test(s)){
+    if(!memos.length)return "저장된 메모가 없어요. \"메모 사물함 번호 27\"처럼 남겨 보세요.";
+    return "🗒️ 메모 "+memos.length+"개\n"+memos.slice(-15).map((x,i)=>"· "+x.text).join("\n");
+  }
+  if((m=s.match(/^(?:메모|기억해\s*줘?|적어\s*줘?)\s*[:：]?\s*(.+)$/))){
+    memos.push({id:uid(),text:m[1],created:Date.now()});save();return "🗒️ 메모해 뒀어요: \""+m[1]+"\"";
+  }
+  if((m=s.match(/(.+?)(?:\s*(?:이라고|라고))?\s*(?:메모|기억)\s*해\s*줘?/))&&!/(할\s*일|일정)/.test(s)){
+    memos.push({id:uid(),text:m[1].trim(),created:Date.now()});save();return "🗒️ 기억해 둘게요: \""+m[1].trim()+"\"";
+  }
+
+  // 타이머
+  if((m=s.match(/(?:타이머|알람)\s*(\d+)\s*(초|분|시간)|(\d+)\s*(초|분|시간)\s*(?:뒤|후)?\s*(?:에)?\s*(?:알려|타이머|알람)/))){
+    const n=+(m[1]||m[3]),u=m[2]||m[4];const ms=n*(u==="초"?1e3:u==="분"?6e4:36e5);
+    setTimeout(()=>{notify("⏰ 타이머 끝! ("+n+u+")");botSay("⏰ "+n+u+" 타이머가 끝났어요!")},ms);
+    return "⏳ "+n+u+" 타이머 시작! 앱을 열어 두면 시간이 되면 알려 드릴게요.";
+  }
+
+  // 일정 추가 (날짜·시간 표현 포함)
+  const w=parseWhen(s);
+  const wantTodo=/(할\s*일|투두|todo)\s*(에|로|으로)?\s*(추가|넣어|등록)|해야\s*(해|돼|됨|함|한다|된다)/i.test(s);
+  if(w.hit&&!wantTodo&&!/(몇\s*시|며칠|무슨\s*요일)/.test(s)){
+    const title=cleanTitle(w.rest);
+    if(title&&title.length>0){
+      const e={id:uid(),title,date:w.date,time:w.time||"",notified:false};
+      events.push(e);save();ctx={lastList:"event",lastIds:[e.id]};
+      return "📅 일정 추가했어요!\n"+dateLabel(e.date)+" "+timeLabel(e.time)+" · "+title+(e.time?"\n10분 전에 알려 드릴게요 🔔":"");
+    }
+  }
+  // 할 일 추가
+  if(wantTodo||/(추가|등록)\s*(해\s*줘|해줘|해|좀)?[.!]?$/.test(s)){
+    const title=cleanTitle(s);
+    if(title){
+      if(w.hit&&w.date){ // 기한 있는 할 일은 일정에도 붙임
+        const tt=cleanTitle(w.rest)||title;
+        todos.push({id:uid(),text:tt+" ("+dateLabel(w.date)+"까지)",done:false,created:Date.now()});save();
+        return "📝 할 일 추가: \""+tt+"\" — "+dateLabel(w.date)+"까지예요.";
+      }
+      todos.push({id:uid(),text:title,done:false,created:Date.now()});save();
+      return pick(["📝 할 일 추가했어요: \""+title+"\"","📝 \""+title+"\" 목록에 넣었어요. 잊지 않게 챙길게요!"])+"\n(남은 할 일 "+pendingTodos().length+"개)";
+    }
+    return "어떤 할 일을 추가할까요? 예: \"빨래 해야 해\"";
+  }
+
+  // 시간/날짜
+  if(/(몇\s*시|시간\s*(알려|뭐))/.test(s)){const d=new Date();return "지금은 "+timeLabel(pad(d.getHours())+":"+pad(d.getMinutes()))+"예요 ⏰"}
+  if(/(며칠|날짜|무슨\s*요일|오늘\s*몇\s*월)/.test(s)){const d=new Date();return "오늘은 "+(d.getMonth()+1)+"월 "+d.getDate()+"일 "+WD[d.getDay()]+"요일이에요 📆"}
+
+  // 계산
+  let ex=s.replace(/더하기|플러스/g,"+").replace(/빼기|마이너스/g,"-").replace(/곱하기|x|×/gi,"*").replace(/나누기|÷/g,"/").replace(/(은|는)?\s*(얼마|몇)(야|이야|임|\?)*$/,"").replace(/[=?]/g,"").trim();
+  if(/^[\d\s+\-*/().%]+$/.test(ex)&&/\d\s*[+\-*/%]\s*[\d(]/.test(ex)){
+    try{const r=Function('"use strict";return ('+ex+")")();if(isFinite(r))return "🧮 "+ex+" = "+(Math.round(r*1e8)/1e8).toLocaleString("ko-KR")}catch(e){}
+  }
+  // 골라줘
+  if((m=s.match(/(.+?)\s*(?:vs|VS|아니면|랑|하고|or)\s*(.+?)\s*(?:중에|중)?\s*(?:골라|뭐가|추천|선택|정해)/))){
+    const opts=(m[1]+","+m[2]).split(/,|vs|VS|아니면|랑|하고/).map(x=>x.trim()).filter(Boolean);
+    return "🎯 고민 끝! "+pick(opts)+"(으)로 가요!";
+  }
+  if(/(주사위)/.test(s))return "🎲 "+(1+Math.floor(Math.random()*6))+"!";
+  if(/(동전|코인)/.test(s))return "🪙 "+pick(["앞면","뒷면"])+"!";
+
+  for(const [re,fn] of TALK)if(re.test(s))return fn();
+
+  // 그냥 짧은 명사구 → 할 일로 제안
+  if(s.length<=20&&!/[?？]$/.test(s)){
+    pendingSuggest=s;
+    return "\""+s+"\"을(를) 할 일로 추가할까요? \"응\"이라고 하면 넣어 둘게요.\n(일정이면 \"내일 3시 "+s+"\"처럼 시간을 붙여 주세요)";
+  }
+  return pick(["음, 그건 아직 잘 모르겠어요 🤔 \"도움말\"이라고 하면 제가 할 수 있는 걸 알려 드릴게요.","제가 이해하기엔 조금 어려워요. 할 일이나 일정으로 말해 주시면 바로 처리할게요!"]);
+}
+let pendingSuggest=null;
+function handle(text){
+  const s=text.trim();
+  if(pendingSuggest){
+    const p=pendingSuggest;pendingSuggest=null;
+    if(/^(응|ㅇㅇ|어|네|예|그래|좋아|ㅇ|웅|yes|넣어|추가)/i.test(s)){
+      todos.push({id:uid(),text:p,done:false,created:Date.now()});save();
+      return "📝 \""+p+"\" 할 일로 넣었어요!";
+    }
+    if(/^(아니|ㄴㄴ|아냐|노|no|됐어|괜찮)/i.test(s))return "알겠어요, 안 넣을게요 🙂";
+  }
+  return respond(s);
+}
+
+/* ---------- 채팅 UI ---------- */
+const $=id=>document.getElementById(id);
+const log=$("log");
+function bubble(who,text,ts,anim=true){
+  const d=document.createElement("div");d.className="msg "+who;if(!anim)d.style.animation="none";
+  d.textContent=text;const t=document.createElement("span");t.className="t";
+  const dt=new Date(ts);t.textContent=timeLabel(pad(dt.getHours())+":"+pad(dt.getMinutes()));
+  d.appendChild(t);log.appendChild(d);log.scrollTop=log.scrollHeight;
+}
+function botSay(text){chat.push({who:"bot",text,ts:Date.now()});S.set("chat",chat.slice(-200));bubble("bot",text,Date.now())}
+function send(txt){
+  const v=(txt??$("in").value).trim();if(!v)return;$("in").value="";
+  chat.push({who:"me",text:v,ts:Date.now()});bubble("me",v,Date.now());
+  const ty=document.createElement("div");ty.className="typing";ty.innerHTML="<i></i><i></i><i></i>";log.appendChild(ty);log.scrollTop=log.scrollHeight;
+  setTimeout(()=>{ty.remove();const r=handle(v);if(r)botSay(r);else S.set("chat",chat.slice(-200));renderChips()},380+Math.random()*320);
+}
+$("sendBtn").onclick=()=>send();
+$("in").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.isComposing){e.preventDefault();send()}});
+function renderChips(){
+  const base=["브리핑","할 일 보여줘","오늘 일정","내일 오후 3시 치과","장보기 해야 해","도움말"];
+  const c=pendingSuggest?["응","아니"]:base;
+  $("chips").innerHTML="";c.forEach(x=>{const b=document.createElement("button");b.className="chip";b.textContent=x;b.onclick=()=>{if(x==="내일 오후 3시 치과"||x==="장보기 해야 해"){$("in").value=x;$("in").focus()}else send(x)};$("chips").appendChild(b)});
+}
+
+/* ---------- 할 일 / 일정 UI ---------- */
+function renderTodos(){
+  const el=$("todoList");el.innerHTML="";
+  const p=pendingTodos(),d=todos.filter(t=>t.done).sort((a,b)=>(b.doneAt||0)-(a.doneAt||0));
+  if(!todos.length){el.innerHTML='<div class="empty">아직 할 일이 없어요.<br>위에 입력하거나 대화에서 "빨래 해야 해"라고 말해 보세요 🪁</div>';return}
+  const sec=(t,n)=>{const h=document.createElement("div");h.className="sec";h.innerHTML="<span>"+t+"</span><span>"+n+"</span>";el.appendChild(h)};
+  const row=t=>{
+    const r=document.createElement("div");r.className="item"+(t.done?" done":"");
+    const c=document.createElement("button");c.className="chk";c.textContent=t.done?"✓":"";
+    c.onclick=()=>{t.done=!t.done;t.doneAt=t.done?Date.now():null;if(t.done&&navigator.vibrate)navigator.vibrate(15);save()};
+    const x=document.createElement("div");x.className="txt";x.textContent=t.text;
+    const del=document.createElement("button");del.className="del";del.textContent="×";del.onclick=()=>{todos=todos.filter(y=>y!==t);save()};
+    r.append(c,x,del);el.appendChild(r);
+  };
+  sec("남은 할 일",p.length);p.forEach(row);
+  if(!p.length){const e=document.createElement("div");e.className="empty";e.style.padding="18px";e.textContent="다 끝냈어요! 🎉";el.appendChild(e)}
+  if(d.length){sec("완료",d.length);d.slice(0,30).forEach(row)}
+}
+function renderEvents(){
+  const el=$("evList");el.innerHTML="";
+  const t=ymd(today());
+  const fut=events.filter(e=>e.date>=t).sort((a,b)=>evMs(a)-evMs(b));
+  const past=events.filter(e=>e.date<t).sort((a,b)=>evMs(b)-evMs(a)).slice(0,10);
+  if(!events.length){el.innerHTML='<div class="empty">일정이 없어요.<br>대화에서 "금요일 7시 친구랑 저녁"처럼 말해도 돼요 📅</div>';return}
+  let cur="";const now=Date.now();
+  const row=e=>{
+    const r=document.createElement("div");r.className="item";
+    const tm=document.createElement("div");tm.className="time"+(evMs(e)<now?" past":"");
+    tm.textContent=e.time?(()=>{const [h,m]=e.time.split(":").map(Number);return (h<12?"AM ":"PM ")+((h%12)||12)+":"+pad(m)})():"종일";
+    const x=document.createElement("div");x.className="txt";x.textContent=e.title;
+    const sm=document.createElement("small");sm.textContent=timeLabel(e.time);x.appendChild(sm);
+    const del=document.createElement("button");del.className="del";del.textContent="×";del.onclick=()=>{events=events.filter(y=>y!==e);save()};
+    r.append(tm,x,del);el.appendChild(r);
+  };
+  fut.forEach(e=>{if(e.date!==cur){cur=e.date;const h=document.createElement("div");h.className="sec";h.innerHTML="<span>"+dateLabel(e.date)+"</span><span>"+events.filter(x=>x.date===e.date).length+"개</span>";el.appendChild(h)}row(e)});
+  if(!fut.length){const e=document.createElement("div");e.className="empty";e.style.padding="18px";e.textContent="다가오는 일정이 없어요.";el.appendChild(e)}
+  if(past.length){const h=document.createElement("div");h.className="sec";h.innerHTML="<span>지난 일정</span><span></span>";el.appendChild(h);past.forEach(row)}
+}
+function renderBadges(){
+  const p=pendingTodos().length,tc=events.filter(e=>e.date===ymd(today())&&evMs(e)>=Date.now()).length;
+  const tb=$("todoBadge"),cb=$("calBadge");
+  tb.hidden=!p;tb.textContent=p;cb.hidden=!tc;cb.textContent=tc;
+  $("sub").textContent=tc?"오늘 남은 일정 "+tc+"개":(p?"남은 할 일 "+p+"개":"맡기면 날아가서 해결해요");
+}
+function renderAll(){renderTodos();renderEvents();renderBadges()}
+
+$("todoAdd").onclick=()=>{const v=$("todoIn").value.trim();if(!v)return;todos.push({id:uid(),text:v,done:false,created:Date.now()});$("todoIn").value="";save()};
+$("todoIn").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.isComposing)$("todoAdd").click()});
+$("evDate").value=ymd(today());
+$("evAdd").onclick=()=>{
+  const ti=$("evTitle").value.trim(),d=$("evDate").value,tm=$("evTime").value;
+  if(!ti){toast("일정 이름을 입력해 주세요");return}if(!d){toast("날짜를 골라 주세요");return}
+  events.push({id:uid(),title:ti,date:d,time:tm||"",notified:false});$("evTitle").value="";$("evTime").value="";save();toast("📅 일정 추가 완료");
+};
+
+/* tabs */
+document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("nav button").forEach(x=>x.classList.toggle("on",x===b));
+  document.querySelectorAll(".view").forEach(v=>v.classList.toggle("on",v.id==="v-"+b.dataset.v));
+  if(b.dataset.v==="chat")log.scrollTop=log.scrollHeight;
+});
+
+/* toast / 알림 */
+let tt;function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("on"),3200)}
+function notify(m){
+  toast(m);if(navigator.vibrate)navigator.vibrate([120,60,120]);
+  try{if("Notification" in window&&Notification.permission==="granted"){
+    if(navigator.serviceWorker&&navigator.serviceWorker.controller)navigator.serviceWorker.ready.then(r=>r.showNotification("Kitel",{body:m,icon:"icon.svg",badge:"icon.svg"}));
+    else new Notification("Kitel",{body:m,icon:"icon.svg"});
+  }}catch(e){}
+}
+function checkReminders(){
+  const now=Date.now();let ch=false;
+  events.forEach(e=>{
+    if(!e.time||e.notified)return;const diff=evMs(e)-now;
+    if(diff<=10*60*1000&&diff>-5*60*1000){e.notified=true;ch=true;
+      const mins=Math.max(0,Math.round(diff/60000));
+      const msg=mins?"🔔 "+mins+"분 뒤 \""+e.title+"\" 일정이에요!":"🔔 지금 \""+e.title+"\" 시간이에요!";
+      notify(msg);botSay(msg);
+    }
+  });
+  if(ch)save();else renderBadges();
+}
+setInterval(checkReminders,20000);
+
+/* 메뉴 */
+const sheet=$("sheet");
+$("menuBtn").onclick=()=>sheet.classList.add("on");
+sheet.onclick=e=>{if(e.target===sheet)sheet.classList.remove("on")};
+$("optClose").onclick=()=>sheet.classList.remove("on");
+$("optNotif").onclick=async()=>{
+  sheet.classList.remove("on");
+  if(!("Notification" in window)){toast("이 브라우저는 알림을 지원하지 않아요");return}
+  const p=await Notification.requestPermission();toast(p==="granted"?"🔔 알림이 켜졌어요":"알림이 꺼져 있어요. 브라우저 설정에서 허용해 주세요");
+};
+$("optClearChat").onclick=()=>{chat=[];S.set("chat",[]);log.innerHTML="";sheet.classList.remove("on");botSay(briefing())};
+$("optClearDone").onclick=()=>{const n=todos.filter(t=>t.done).length;todos=todos.filter(t=>!t.done);save();sheet.classList.remove("on");toast("완료한 할 일 "+n+"개 정리했어요")};
+$("optReset").onclick=()=>{if(!confirm("할 일·일정·메모·대화를 모두 지울까요?"))return;todos=[];events=[];memos=[];chat=[];prof={name:""};save();log.innerHTML="";sheet.classList.remove("on");botSay("처음부터 다시 시작해요! 🪁\n\n"+HELP)};
+
+/* 시작 */
+chat.forEach(c=>bubble(c.who,c.text,c.ts,false));
+if(!chat.length)botSay("안녕하세요! 저는 Kitel이에요 🪁\n할 일과 일정을 대신 챙겨 드릴게요.\n\n예) \"내일 오후 3시 치과\", \"장보기 해야 해\", \"할 일 보여줘\"\n\"도움말\"이라고 하면 전체 기능을 알려 드려요.");
+else{const last=chat[chat.length-1].ts;if(Date.now()-last>3*60*60*1000)botSay(briefing())}
+renderChips();renderAll();checkReminders();
+if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
+})();
+</script>
+</body>
+</html>

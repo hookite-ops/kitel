@@ -1,0 +1,13 @@
+{
+  "name": "Kitel",
+  "short_name": "Kitel",
+  "description": "맡기면 날아가서 해결해요 — 나만의 할 일·일정 비서",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0b1020",
+  "theme_color": "#0b1020",
+  "lang": "ko",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
