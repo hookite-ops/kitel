@@ -1,7 +1,7 @@
 /* Kitel v2 — 규칙 엔진 + 선택형 온디바이스 AI 두뇌 */
 (()=>{
 "use strict";
-const VERSION="2.0";
+const VERSION="3.0";
 /* ================= 저장소 ================= */
 const S={
   get(k,d){try{const v=localStorage.getItem("kitel."+k);return v?JSON.parse(v):d}catch(e){return d}},
@@ -12,7 +12,7 @@ let events=S.get("events",[]); // {id,title,date,time,repeat,notified:{},star,cr
 let memos=S.get("memos",[]);
 let chat=S.get("chat",[]);
 let prof=S.get("prof",{name:""});
-let opt=Object.assign({tts:false,brain:"off"},S.get("opt",{}));
+let opt=Object.assign({tts:false},S.get("opt",{}));
 // 구버전 데이터 호환
 events.forEach(e=>{if(typeof e.notified!=="object"||!e.notified)e.notified={};if(e.repeat===undefined)e.repeat=null});
 todos.forEach(t=>{if(t.due===undefined)t.due=null});
@@ -446,44 +446,29 @@ function splitCmds(s){
   return parts.length>1?parts:[s];
 }
 
-/* ================= 온디바이스 AI 두뇌 (WebLLM) ================= */
-const MODELS={lite:{name:"가벼운 두뇌",size:"약 400MB",id:"Qwen2.5-0.5B-Instruct"},smart:{name:"똑똑한 두뇌",size:"약 1GB",id:"Qwen2.5-1.5B-Instruct"}};
-const brain={engine:null,state:"off",progress:0,loading:null};
-async function loadBrain(kind){
-  if(brain.loading)return brain.loading;
-  if(!navigator.gpu){brain.state="unsupported";updateBrainUI();throw new Error("WebGPU 미지원")}
-  brain.state="loading";brain.progress=0;updateBrainUI();
-  brain.loading=(async()=>{
-    try{
-      const adapter=await navigator.gpu.requestAdapter();
-      if(!adapter)throw new Error("GPU를 찾지 못함");
-      const f16=adapter.features.has("shader-f16");
-      const id=MODELS[kind].id+(f16?"-q4f16_1-MLC":"-q4f32_1-MLC");
-      const webllm=await import("https://esm.run/@mlc-ai/web-llm@0.2.86");
-      brain.engine=await webllm.CreateMLCEngine(id,{initProgressCallback:r=>{brain.progress=Math.round((r.progress||0)*100);updateBrainUI()}});
-      brain.state="ready";updateBrainUI();return brain.engine;
-    }catch(e){brain.state="error";brain.err=String(e&&e.message||e);brain.engine=null;updateBrainUI();throw e}
-    finally{brain.loading=null}
-  })();
-  return brain.loading;
+/* ================= Gemini 에이전트 (서버) ================= */
+const ai={on:false,checked:false,pin:S.get("pin","")};
+async function checkAI(){
+  try{const r=await fetch("api/health",{cache:"no-store"});const j=await r.json();ai.on=!!j.ai}catch(e){ai.on=false}
+  ai.checked=true;updateAIUI();
 }
-function brainContext(){
-  const t=ymd(today()),occ=occurrences(t,ymd(addDays(today(),7))).slice(0,15),p=pending().slice(0,15);
-  return "너는 'Kitel'이라는 이름의 친절한 한국어 개인 비서 AI야. 사용자의 기기 안에서 동작해. 항상 한국어로, 2~4문장 이내로 짧고 따뜻하게 답해. 모르는 사실은 지어내지 말고 모른다고 말해."+
-  "\n현재: "+new Date().toLocaleString("ko-KR",{dateStyle:"full",timeStyle:"short"})+
-  (prof.name?"\n사용자 이름: "+prof.name:"")+
-  "\n앞으로 7일 일정: "+(occ.length?occ.map(o=>dateLabel(o.date)+" "+timeLabel(o.e.time)+" "+o.e.title).join(" / "):"없음")+
-  "\n남은 할 일: "+(p.length?p.map(x=>x.text).join(", "):"없음")+
-  "\n할 일이나 일정을 추가·삭제·변경하고 싶어하면, 앱이 알아듣는 말투(예: '내일 3시 치과', '장보기 해야 해', '1번 완료')로 다시 말해 달라고 안내해.";
+async function askAI(text,retry){
+  const body={message:text,history:chat.slice(-17,-1).map(c=>({role:c.who,text:c.text})),state:{todos,events,memos,prof}};
+  const r=await fetch("api/chat",{method:"POST",headers:{"content-type":"application/json","x-kitel-pin":ai.pin||""},body:JSON.stringify(body)});
+  if(r.status===401&&!retry){const p=prompt("Kitel 비밀번호(PIN)를 입력해 주세요");if(p){ai.pin=p.trim();S.set("pin",ai.pin);return askAI(text,true)}}
+  if(r.status===503){ai.on=false;updateAIUI()}
+  if(!r.ok){const e=new Error("http "+r.status);e.status=r.status;throw e}
+  return r.json();
 }
-async function brainReply(userText,bubbleEl){
-  const eng=brain.engine;
-  const hist=chat.slice(-9,-1).map(c=>({role:c.who==="me"?"user":"assistant",content:c.text}));
-  const msgs=[{role:"system",content:brainContext()},...hist,{role:"user",content:userText}];
-  let out="";
-  const stream=await eng.chat.completions.create({messages:msgs,stream:true,temperature:.7,max_tokens:320});
-  for await(const ch of stream){const d=ch.choices[0]?.delta?.content||"";if(d){out+=d;bubbleEl.firstChild.nodeValue=out;scrollDown()}}
-  return out.trim()||"…";
+function applyAI(j){
+  const st=j.state;if(!st||!Array.isArray(st.todos)||!Array.isArray(st.events))return;
+  if(j.actions&&j.actions.length)snap();
+  todos=st.todos;memos=Array.isArray(st.memos)?st.memos:memos;
+  events=st.events.map(e=>Object.assign({},e,{notified:(e.notified&&typeof e.notified==="object")?e.notified:{},repeat:e.repeat||null}));
+  if(st.prof&&typeof st.prof.name==="string")prof.name=st.prof.name;
+  (j.timers||[]).forEach(t=>setTimeout(()=>{const m="⏰ "+(t.label?t.label+" — ":"")+"타이머 끝!";notify(m);botSay(m)},t.seconds*1000));
+  const last=[...events].sort((a,b)=>(b.created||0)-(a.created||0))[0];if(last)ctx.ref={type:"event",id:last.id};
+  save();
 }
 
 /* ================= 채팅 UI ================= */
@@ -510,20 +495,22 @@ async function send(txt){
   const ty=document.createElement("div");ty.className="typing";ty.innerHTML="<i></i><i></i><i></i>";log.appendChild(ty);scrollDown(true);
   await new Promise(r=>setTimeout(r,220));
   const s=v.replace(/\s+/g," ");
+  if(ai.on&&!pendingSuggest&&!/^(되돌려|되돌리기|실행\s*취소|undo)/i.test(s)){
+    try{
+      const j=await askAI(s);applyAI(j);ty.remove();
+      botSay(j.reply);busy=false;renderChips();return;
+    }catch(e){
+      toast(e.status===429?"요청이 많아요. 잠시 후 다시 시도해 주세요":"AI 연결이 불안정해서 기본 모드로 답했어요");
+    }
+  }
   const parts=pendingSuggest?[s]:splitCmds(s);
   const outs=[];let unknown=false;
   for(const p of parts){const r=handleOne(p);if(r)outs.push(r);else if(parts.length===1)unknown=true;else outs.push("\""+p+"\"은(는) 잘 모르겠어요 🤔")}
   if(unknown){
-    if(brain.state==="ready"){
-      ty.remove();const b=bubble("bot","",Date.now());b.classList.add("ai");
-      try{const r=await brainReply(s,b);chat.push({who:"bot",text:r,ts:Date.now()});saveChat();speak(r)}
-      catch(e){b.firstChild.nodeValue="AI 두뇌가 잠깐 멈췄어요. 다시 말해 주세요.";}
-      busy=false;renderChips();return;
-    }
     if(s.length<=20&&!/[?？]$/.test(s)&&!/(뭐|왜|어떻게|누구|어디|언제)/.test(s)){
       pendingSuggest=cleanTitle(s)||s;
       outs.push("\""+pendingSuggest+"\"을(를) 할 일로 추가할까요? \"응\"이라고 하면 넣어 둘게요.\n(일정이면 \"내일 3시 "+pendingSuggest+"\"처럼 시간을 붙여 주세요)");
-    }else outs.push(pick(["음, 그건 아직 잘 모르겠어요 🤔 \"도움말\"로 제가 할 수 있는 걸 확인해 보세요."+(brain.state!=="unsupported"?"\n⋯ 메뉴에서 AI 두뇌를 켜면 자유 대화도 할 수 있어요!":""),"제가 이해하기엔 조금 어려워요. 할 일이나 일정으로 말해 주시면 바로 처리할게요!"]));
+    }else outs.push(pick(["음, 그건 아직 잘 모르겠어요 🤔 \"도움말\"로 제가 할 수 있는 걸 확인해 보세요."+(!ai.on?"\n(지금은 AI가 연결되지 않은 기본 모드예요)":""),"제가 이해하기엔 조금 어려워요. 할 일이나 일정으로 말해 주시면 바로 처리할게요!"]));
   }
   ty.remove();botSay(outs.join("\n\n"));busy=false;renderChips();
 }
@@ -613,7 +600,6 @@ function renderEvents(){
 function renderBadges(){
   const p=pending().length,t0=ymd(today()),tc=occurrences(t0,t0).filter(o=>!o.e.time||o.ms>=Date.now()).length;
   const tb=$("todoBadge"),cb=$("calBadge");tb.hidden=!p;tb.textContent=p;cb.hidden=!tc;cb.textContent=tc;
-  if(brain.state==="loading")return;
   $("sub").textContent=tc?"오늘 남은 일정 "+tc+"개":(p?"남은 할 일 "+p+"개":"맡기면 날아가서 해결해요");
 }
 let curView="chat";
@@ -665,29 +651,16 @@ document.addEventListener("visibilitychange",()=>{if(!document.hidden){checkRemi
 
 /* ================= 메뉴 ================= */
 const sheet=$("sheet");
-function updateBrainUI(){
-  const b=$("optBrain"),info=$("brainInfo");
-  const lbl={off:"🧠 AI 두뇌 켜기 (자유 대화)",loading:"🧠 AI 두뇌 불러오는 중… "+brain.progress+"%",ready:"🧠 AI 두뇌 켜짐 — "+(MODELS[opt.brain]?.name||""),error:"🧠 AI 두뇌 오류 — 다시 시도",unsupported:"🧠 이 기기는 AI 두뇌를 지원하지 않아요"};
-  b.textContent=lbl[brain.state]||lbl.off;
-  info.textContent=brain.state==="error"?(brain.err||""):brain.state==="ready"?"할 일·일정 명령은 지금처럼 바로 처리되고, 그 밖의 대화는 기기 안의 AI가 답해요.":"";
-  if(brain.state==="loading")$("sub").textContent="🧠 AI 두뇌 준비 중 "+brain.progress+"%";
-  $("brainDot").hidden=brain.state!=="ready";
+function updateAIUI(){
+  const st=$("aiStatus");
+  st.textContent=!ai.checked?"✨ AI 연결 확인 중…":ai.on?"✨ Gemini AI 연결됨 — 자유롭게 말하면 알아서 처리해요":"⚙️ 기본 모드 (서버에 GEMINI_API_KEY가 없어요)";
+  st.className=ai.on?"on":"";
+  $("aiDot").hidden=!ai.on;
+  $("in").placeholder=ai.on?"무엇이든 말해 보세요…":"Kitel에게 말하기…";
 }
-$("menuBtn").onclick=()=>{updateBrainUI();$("optTts").textContent=opt.tts?"🔊 답변 읽어주기 켜짐":"🔈 답변 읽어주기 꺼짐";sheet.classList.add("on")};
+$("menuBtn").onclick=()=>{updateAIUI();$("optTts").textContent=opt.tts?"🔊 답변 읽어주기 켜짐":"🔈 답변 읽어주기 꺼짐";sheet.classList.add("on")};
 sheet.onclick=e=>{if(e.target===sheet)sheet.classList.remove("on")};
 $("optClose").onclick=()=>sheet.classList.remove("on");
-$("optBrain").onclick=()=>{
-  if(brain.state==="loading"||brain.state==="unsupported")return;
-  if(brain.state==="ready"){if(confirm("AI 두뇌를 끌까요? (받아 둔 파일은 남아 있어서 다시 켤 때 빨라요)")){brain.engine?.unload?.();brain.engine=null;brain.state="off";opt.brain="off";save();updateBrainUI()}return}
-  $("brainPick").hidden=!$("brainPick").hidden;
-};
-document.querySelectorAll("[data-brain]").forEach(b=>b.onclick=()=>{
-  const k=b.dataset.brain;$("brainPick").hidden=true;
-  if(!navigator.gpu){brain.state="unsupported";updateBrainUI();toast("이 브라우저는 WebGPU를 지원하지 않아요 (최신 크롬 권장)");return}
-  opt.brain=k;save();sheet.classList.remove("on");
-  toast("🧠 "+MODELS[k].name+" 받는 중 ("+MODELS[k].size+", 처음 한 번만) — Wi-Fi 권장");
-  loadBrain(k).then(()=>botSay("🧠 AI 두뇌가 켜졌어요! 이제 할 일·일정 말고도 아무 이야기나 편하게 걸어 보세요.")).catch(e=>toast("AI 두뇌를 불러오지 못했어요: "+(e.message||e)));
-});
 $("optTts").onclick=()=>{opt.tts=!opt.tts;save();$("optTts").textContent=opt.tts?"🔊 답변 읽어주기 켜짐":"🔈 답변 읽어주기 꺼짐";if(opt.tts)speak("답변을 읽어 드릴게요")};
 $("optNotif").onclick=async()=>{
   sheet.classList.remove("on");
@@ -718,7 +691,7 @@ recent.forEach(c=>{const d=bubble(c.who,c.text,c.ts,false);frag.appendChild(d)})
 if(!chat.length)botSay("안녕하세요! 저는 Kitel이에요 🪁\n할 일과 일정을 대신 챙겨 드릴게요.\n\n예) \"내일 오후 3시 치과\", \"매일 아침 8시 약\", \"장보기 해야 해\"\n🎤 버튼으로 말로 해도 돼요. \"도움말\"이라고 하면 전체 기능을 알려 드려요.");
 else if(Date.now()-chat[chat.length-1].ts>3*60*60*1000)botSay(briefing());
 scrollDown(true);renderChips();renderAll();checkReminders();
-if(opt.brain!=="off"&&MODELS[opt.brain]&&navigator.gpu)setTimeout(()=>loadBrain(opt.brain).catch(()=>{}),1200);
+checkAI();
 if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
 // 테스트용 노출
 window.__kitel={respond,parseWhen,handleOne,splitCmds};
