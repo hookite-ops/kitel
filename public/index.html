@@ -45,9 +45,37 @@ main{flex:1;min-height:0;position:relative}
 #chips{display:flex;gap:8px;overflow-x:auto;padding:4px 14px 8px;scrollbar-width:none}
 #chips::-webkit-scrollbar{display:none}
 .chip{flex:none;background:#ffffff0d;border:1px solid var(--line);color:var(--text);border-radius:999px;padding:8px 13px;font-size:13.5px}
-.inbar{display:flex;gap:8px;padding:8px 12px 10px;align-items:center}
-.inbar input{flex:1;min-width:0;background:var(--card);border:1px solid var(--line);color:var(--text);border-radius:22px;padding:13px 16px;font-size:16px;outline:none}
-.inbar input:focus{border-color:var(--accent2)}
+.inbar{display:flex;gap:6px;padding:8px 10px 10px;align-items:flex-end}
+.inbar textarea{flex:1;min-width:0;background:var(--card);border:1px solid var(--line);color:var(--text);border-radius:22px;padding:12px 15px;font-size:16px;outline:none;resize:none;height:48px;max-height:120px;line-height:1.4;font-family:inherit}
+.inbar textarea:focus{border-color:var(--accent2)}
+.send.stop{background:var(--bad);color:#fff;font-size:16px}
+.mic.off{opacity:.45}
+#preview{display:flex;align-items:center;gap:10px;margin:0 12px 2px;padding:8px;background:var(--card);border:1px solid var(--accent2);border-radius:14px;font-size:13px;color:var(--sub)}
+#preview[hidden]{display:none}
+#preview img{width:48px;height:48px;object-fit:cover;border-radius:10px;flex:none}
+#preview span{flex:1}
+#preview button{background:none;border:0;color:var(--sub);font-size:22px;width:32px}
+#aiBanner{margin:4px 14px 6px;padding:11px 14px;border-radius:14px;background:#ffb85c1f;border:1px solid #ffb85c88;color:#ffd9a6;font-size:13.5px;line-height:1.45;text-align:left;width:calc(100% - 28px)}
+#aiBanner b{color:#ffe7c4}
+#aiBanner[hidden]{display:none}
+.msg .body b.h{display:inline-block;font-size:16.5px;margin:2px 0}
+.msg .body code{background:#0b1020;border:1px solid var(--line);border-radius:6px;padding:1px 5px;font-size:13.5px;font-family:ui-monospace,Menlo,monospace}
+.msg .body pre{background:#0b1020;border:1px solid var(--line);border-radius:10px;padding:10px;overflow-x:auto;margin:6px 0;white-space:pre}
+.msg .body pre code{border:0;padding:0;background:none}
+.msg .body a{color:var(--accent)}
+.msg.streaming .body:after{content:"▍";color:var(--accent);animation:bl .9s infinite;margin-left:1px}
+.msg.streaming .body:empty:after{content:"생각 중…";color:var(--sub);font-size:14px}
+.acts{display:flex;flex-wrap:wrap;gap:6px}
+.acts:empty{display:none}
+.acts{margin-top:8px}
+.act{background:#5ee6c81a;border:1px solid #5ee6c855;color:var(--accent);border-radius:999px;padding:4px 10px;font-size:12.5px;animation:pop .25s ease}
+.src{margin-top:8px;font-size:12px;color:var(--sub);display:flex;flex-wrap:wrap;gap:4px 10px}
+.src a{color:var(--accent2);text-decoration:none;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.msg .pic{display:block;max-width:220px;max-height:260px;border-radius:12px;margin-bottom:6px}
+.picph{font-size:13px;color:var(--sub);margin-bottom:4px}
+#factList .item{padding:10px 12px}
+#factList .txt{font-size:14px}
+.sheetSec{color:var(--sub);font-size:13px;font-weight:700;margin:14px 4px 8px}
 .send{width:48px;height:48px;border-radius:50%;border:0;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#0b1020;font-size:20px;font-weight:700;flex:none}
 .mic{width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--text);font-size:19px;flex:none}
 .mic.rec{background:var(--bad);border-color:var(--bad);animation:pulse 1s infinite}
@@ -98,7 +126,7 @@ nav .badge{position:absolute;top:5px;left:calc(50% + 8px);background:var(--bad);
 #sheet h3 small{color:var(--sub);font-weight:400;font-size:12px}
 #sheet .opt{display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);color:var(--text);border-radius:14px;padding:14px;font-size:15px;margin-bottom:8px}
 #sheet .opt.red{color:var(--bad)}
-#aiStatus{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px 14px;font-size:14px;color:var(--sub);margin-bottom:8px;line-height:1.45}
+#aiStatus{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px 14px;font-size:14px;color:var(--sub);margin-bottom:8px;line-height:1.45;white-space:pre-line}
 #aiStatus.on{border-color:var(--accent);color:var(--text)}
 @media (min-width:720px){body{max-width:720px;margin:0 auto;border-left:1px solid var(--line);border-right:1px solid var(--line)}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
@@ -113,11 +141,15 @@ nav .badge{position:absolute;top:5px;left:calc(50% + 8px);background:var(--bad);
 
 <main>
   <section class="view on" id="v-chat">
+    <button id="aiBanner" hidden>⚠️ 지금은 <b>기본 모드</b>라 정해진 말만 알아들어요. <b>여기를 눌러 AI 켜는 법 보기 →</b></button>
     <div id="log" aria-live="polite"></div>
     <div id="chips"></div>
+    <div id="preview" hidden></div>
     <div class="inbar">
+      <button class="mic" id="camBtn" aria-label="사진 보내기">📷</button>
+      <input type="file" id="camFile" accept="image/*" hidden>
       <button class="mic" id="micBtn" aria-label="말로 하기">🎤</button>
-      <input id="in" placeholder="Kitel에게 말하기…" autocomplete="off" enterkeyhint="send">
+      <textarea id="in" rows="1" placeholder="Kitel에게 말하기…" autocomplete="off" enterkeyhint="send"></textarea>
       <button class="send" id="sendBtn" aria-label="보내기">↑</button>
     </div>
   </section>
@@ -168,8 +200,11 @@ nav .badge{position:absolute;top:5px;left:calc(50% + 8px);background:var(--bad);
 
 <div id="toast" role="status"></div>
 <div id="sheet"><div class="box">
-  <h3>Kitel 설정 <small>v3.0</small></h3>
+  <h3>Kitel 설정 <small>v4.0</small></h3>
   <div id="aiStatus">✨ AI 연결 확인 중…</div>
+  <div class="sheetSec">💡 Kitel이 기억하는 것</div>
+  <div id="factList"></div>
+  <div class="sheetSec">설정</div>
   <button class="opt" id="optTts">🔈 답변 읽어주기</button>
   <button class="opt" id="optNotif">🔔 알림 켜기</button>
   <button class="opt" id="optExport">💾 데이터 백업 저장</button>
@@ -181,6 +216,6 @@ nav .badge{position:absolute;top:5px;left:calc(50% + 8px);background:var(--bad);
   <button class="opt" id="optClose">닫기</button>
 </div></div>
 
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

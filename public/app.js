@@ -1,7 +1,7 @@
 /* Kitel v2 — 규칙 엔진 + 선택형 온디바이스 AI 두뇌 */
 (()=>{
 "use strict";
-const VERSION="3.0";
+const VERSION="4.0";
 /* ================= 저장소 ================= */
 const S={
   get(k,d){try{const v=localStorage.getItem("kitel."+k);return v?JSON.parse(v):d}catch(e){return d}},
@@ -10,6 +10,7 @@ const S={
 let todos=S.get("todos",[]);   // {id,text,done,created,doneAt,due,star}
 let events=S.get("events",[]); // {id,title,date,time,repeat,notified:{},star,created}
 let memos=S.get("memos",[]);
+let facts=S.get("facts",[]);  // AI가 기억하는 사용자 정보
 let chat=S.get("chat",[]);
 let prof=S.get("prof",{name:""});
 let opt=Object.assign({tts:false},S.get("opt",{}));
@@ -23,7 +24,7 @@ const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 function snap(){undoStack.push(JSON.stringify({todos,events,memos}));if(undoStack.length>15)undoStack.shift()}
 let saveT=0;
 function save(){
-  S.set("todos",todos);S.set("events",events);S.set("memos",memos);S.set("prof",prof);S.set("opt",opt);
+  S.set("todos",todos);S.set("events",events);S.set("memos",memos);S.set("facts",facts);S.set("prof",prof);S.set("opt",opt);
   cancelAnimationFrame(saveT);saveT=requestAnimationFrame(renderAll);
 }
 const saveChat=()=>S.set("chat",chat.slice(-200));
@@ -446,29 +447,70 @@ function splitCmds(s){
   return parts.length>1?parts:[s];
 }
 
-/* ================= Gemini 에이전트 (서버) ================= */
-const ai={on:false,checked:false,pin:S.get("pin","")};
+/* ================= Gemini 에이전트 (서버, 스트리밍) ================= */
+const ai={on:false,checked:false,pin:S.get("pin",""),model:"",search:false,ctrl:null};
 async function checkAI(){
-  try{const r=await fetch("api/health",{cache:"no-store"});const j=await r.json();ai.on=!!j.ai}catch(e){ai.on=false}
-  ai.checked=true;updateAIUI();
+  try{const r=await fetch("api/health",{cache:"no-store"});const j=await r.json();ai.on=!!j.ai;ai.model=j.model||"";ai.search=!!j.search}catch(e){ai.on=false}
+  ai.checked=true;updateAIUI();renderChips();
 }
-async function askAI(text,retry){
-  const body={message:text,history:chat.slice(-17,-1).map(c=>({role:c.who,text:c.text})),state:{todos,events,memos,prof}};
-  const r=await fetch("api/chat",{method:"POST",headers:{"content-type":"application/json","x-kitel-pin":ai.pin||""},body:JSON.stringify(body)});
-  if(r.status===401&&!retry){const p=prompt("Kitel 비밀번호(PIN)를 입력해 주세요");if(p){ai.pin=p.trim();S.set("pin",ai.pin);return askAI(text,true)}}
+async function askAIStream(text,image,onEv,retry){
+  const history=chat.slice(-21,-1).filter(c=>c.text).map(c=>({role:c.who,text:c.text}));
+  const body={message:text,image:image||null,history,state:{todos,events,memos,facts,prof}};
+  const ctrl=new AbortController();ai.ctrl=ctrl;
+  const r=await fetch("api/chat",{method:"POST",headers:{"content-type":"application/json","x-kitel-pin":ai.pin||""},body:JSON.stringify(body),signal:ctrl.signal});
+  if(r.status===401&&!retry){const p=prompt("Kitel 비밀번호(PIN)를 입력해 주세요");if(p){ai.pin=p.trim();S.set("pin",ai.pin);return askAIStream(text,image,onEv,true)}}
   if(r.status===503){ai.on=false;updateAIUI()}
   if(!r.ok){const e=new Error("http "+r.status);e.status=r.status;throw e}
-  return r.json();
+  const rd=r.body.getReader(),dec=new TextDecoder();let buf="";
+  for(;;){
+    const {value,done}=await rd.read();if(done)break;
+    buf+=dec.decode(value,{stream:true});
+    let i;while((i=buf.indexOf("\n\n"))>=0){
+      const blk=buf.slice(0,i);buf=buf.slice(i+2);
+      for(const line of blk.split("\n"))if(line.startsWith("data: ")){try{onEv(JSON.parse(line.slice(6)))}catch(e){}}
+    }
+  }
 }
 function applyAI(j){
   const st=j.state;if(!st||!Array.isArray(st.todos)||!Array.isArray(st.events))return;
-  if(j.actions&&j.actions.length)snap();
-  todos=st.todos;memos=Array.isArray(st.memos)?st.memos:memos;
+  snap();
+  todos=st.todos;memos=Array.isArray(st.memos)?st.memos:memos;facts=Array.isArray(st.facts)?st.facts:facts;
   events=st.events.map(e=>Object.assign({},e,{notified:(e.notified&&typeof e.notified==="object")?e.notified:{},repeat:e.repeat||null}));
   if(st.prof&&typeof st.prof.name==="string")prof.name=st.prof.name;
   (j.timers||[]).forEach(t=>setTimeout(()=>{const m="⏰ "+(t.label?t.label+" — ":"")+"타이머 끝!";notify(m);botSay(m)},t.seconds*1000));
-  const last=[...events].sort((a,b)=>(b.created||0)-(a.created||0))[0];if(last)ctx.ref={type:"event",id:last.id};
   save();
+}
+/* 사진 첨부 (자동 축소) */
+let pendingImage=null;
+function shrinkImage(file){
+  return new Promise((res,rej)=>{
+    const url=URL.createObjectURL(file),img=new Image();
+    img.onload=()=>{const M=1280,k=Math.min(1,M/Math.max(img.width,img.height));const c=document.createElement("canvas");c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);
+      c.getContext("2d").drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);res(c.toDataURL("image/jpeg",.85))};
+    img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error("이미지를 읽지 못했어요"))};img.src=url;
+  });
+}
+
+/* 안전한 마크다운 */
+const esc=t=>t.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function inlineMd(t){
+  return t.replace(/`([^`\n]+)`/g,"<code>$1</code>")
+    .replace(/\*\*([^*\n]+)\*\*/g,"<b>$1</b>")
+    .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g,"$1<i>$2</i>")
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>')
+    .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g,'$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+}
+function md(src){
+  const parts=esc(src).split(/```(?:\w+)?\n?/);
+  return parts.map((seg,i)=>{
+    if(i%2)return "<pre><code>"+seg.replace(/\n$/,"")+"</code></pre>";
+    return seg.split("\n").map(l=>{
+      let m;
+      if((m=l.match(/^\s*#{1,4}\s+(.*)$/)))return "<b class=h>"+inlineMd(m[1])+"</b>";
+      if((m=l.match(/^(\s*)[-*•]\s+(.*)$/)))return m[1]+"• "+inlineMd(m[2]);
+      return inlineMd(l);
+    }).join("\n");
+  }).join("");
 }
 
 /* ================= 채팅 UI ================= */
@@ -476,11 +518,24 @@ const $=id=>document.getElementById(id);
 const log=$("log");
 let stick=true;log.addEventListener("scroll",()=>{stick=log.scrollHeight-log.scrollTop-log.clientHeight<80},{passive:true});
 const scrollDown=(force)=>{if(force||stick)log.scrollTop=log.scrollHeight};
-function bubble(who,text,ts,anim=true){
+function bubble(who,text,ts,anim=true,extra){
   const d=document.createElement("div");d.className="msg "+who;if(!anim)d.style.animation="none";
-  d.appendChild(document.createTextNode(text));
-  const t=document.createElement("span");t.className="t";const dt=new Date(ts);t.textContent=timeLabel(pad(dt.getHours())+":"+pad(dt.getMinutes()));
+  if(extra&&extra.img){const im=document.createElement("img");im.className="pic";im.src=extra.img;im.alt="첨부 사진";d.appendChild(im)}
+  else if(extra&&extra.hadImg){d.appendChild(Object.assign(document.createElement("div"),{className:"picph",textContent:"📷 사진"}))}
+  const body=document.createElement("div");body.className="body";
+  if(who==="bot")body.innerHTML=md(text);else body.textContent=text;
+  d.appendChild(body);
+  const acts=document.createElement("div");acts.className="acts";d.appendChild(acts);
+  if(extra&&extra.acts)extra.acts.forEach(a=>addAct(d,a));
+  if(extra&&extra.src&&extra.src.length)addSrc(d,extra.src);
+  const t=document.createElement("span");t.className="t";const dt=new Date(ts);t.textContent=timeLabel(pad(dt.getHours())+":"+pad(dt.getMinutes()))+(extra&&extra.ai?" · ✨":"");
   d.appendChild(t);log.appendChild(d);return d;
+}
+function addAct(d,a){const c=document.createElement("span");c.className="act";c.textContent=a.icon+" "+a.label;d.querySelector(".acts").appendChild(c)}
+function addSrc(d,src){
+  const w=document.createElement("div");w.className="src";w.appendChild(document.createTextNode("출처 "));
+  src.slice(0,4).forEach((x,i)=>{const a=document.createElement("a");a.href=x.url;a.target="_blank";a.rel="noopener";a.textContent=(i+1)+". "+(x.title||"링크");w.appendChild(a)});
+  d.insertBefore(w,d.querySelector(".t"));
 }
 function speak(text){
   if(!opt.tts||!("speechSynthesis" in window))return;
@@ -488,21 +543,42 @@ function speak(text){
 }
 function botSay(text){chat.push({who:"bot",text,ts:Date.now()});saveChat();bubble("bot",text,Date.now());scrollDown(true);speak(text)}
 let busy=false;
+function setBusy(v){busy=v;const b=$("sendBtn");b.textContent=v?"■":"↑";b.classList.toggle("stop",v);b.setAttribute("aria-label",v?"멈추기":"보내기")}
 async function send(txt){
-  const v=(txt??$("in").value).trim();if(!v||busy)return;$("in").value="";
-  chat.push({who:"me",text:v,ts:Date.now()});saveChat();bubble("me",v,Date.now());scrollDown(true);
-  busy=true;
-  const ty=document.createElement("div");ty.className="typing";ty.innerHTML="<i></i><i></i><i></i>";log.appendChild(ty);scrollDown(true);
-  await new Promise(r=>setTimeout(r,220));
+  if(busy){if(ai.ctrl)ai.ctrl.abort();return}
+  const v=(txt??$("in").value).trim();const img=pendingImage;
+  if(!v&&!img)return;$("in").value="";autoGrow();clearImage();
+  if(img&&!ai.on){toast("사진 인식은 AI가 연결돼야 쓸 수 있어요");return}
+  chat.push({who:"me",text:v,ts:Date.now(),hadImg:!!img});saveChat();bubble("me",v,Date.now(),true,{img});scrollDown(true);
+  setBusy(true);
   const s=v.replace(/\s+/g," ");
-  if(ai.on&&!pendingSuggest&&!/^(되돌려|되돌리기|실행\s*취소|undo)/i.test(s)){
+  if(ai.on&&!pendingSuggest&&!/^(되돌려|되돌리기|실행\s*취소|undo)$/i.test(s)){
+    const d=bubble("bot","",Date.now(),true,{ai:true});d.classList.add("ai","streaming");scrollDown(true);
+    const body=d.querySelector(".body");let acc="",acts=[],raf=0,doneEv=null,errEv=null;
+    const paint=()=>{raf=0;body.innerHTML=md(acc);scrollDown()};
     try{
-      const j=await askAI(s);applyAI(j);ty.remove();
-      botSay(j.reply);busy=false;renderChips();return;
-    }catch(e){
-      toast(e.status===429?"요청이 많아요. 잠시 후 다시 시도해 주세요":"AI 연결이 불안정해서 기본 모드로 답했어요");
+      await askAIStream(s,img,ev=>{
+        if(ev.type==="text"){acc+=ev.delta;if(!raf)raf=requestAnimationFrame(paint)}
+        else if(ev.type==="action"){acts.push({icon:ev.icon,label:ev.label});addAct(d,ev);scrollDown();if(navigator.vibrate)navigator.vibrate(10)}
+        else if(ev.type==="done")doneEv=ev;
+        else if(ev.type==="error")errEv=ev;
+      });
+    }catch(e){if(e.name==="AbortError"){acc+=(acc?"\n\n":"")+"⏹️ 멈췄어요.";}else errEv={status:e.status,message:e.message}}
+    cancelAnimationFrame(raf);
+    if(doneEv)applyAI(doneEv);
+    if(errEv&&!acc.trim()){
+      d.remove();
+      toast(errEv.status===429?"요청이 많아요. 잠시 후 다시 시도해 주세요":"AI 연결이 불안정해서 기본 모드로 답했어요");
+      if(img){botSay("사진을 읽지 못했어요 😢 잠시 후 다시 보내 주세요.");setBusy(false);return}
+    }else{
+      if(errEv)acc+="\n\n⚠️ 중간에 연결이 끊겼어요. 다시 말해 주세요.";
+      d.classList.remove("streaming");body.innerHTML=md(acc||"처리했어요! ✅");
+      const src=(doneEv&&doneEv.sources)||[];if(src.length)addSrc(d,src);
+      chat.push({who:"bot",text:acc,ts:Date.now(),acts,src,ai:true});saveChat();speak(acc);scrollDown();
+      setBusy(false);renderChips();return;
     }
   }
+  await new Promise(r=>setTimeout(r,200));
   const parts=pendingSuggest?[s]:splitCmds(s);
   const outs=[];let unknown=false;
   for(const p of parts){const r=handleOne(p);if(r)outs.push(r);else if(parts.length===1)unknown=true;else outs.push("\""+p+"\"은(는) 잘 모르겠어요 🤔")}
@@ -510,14 +586,27 @@ async function send(txt){
     if(s.length<=20&&!/[?？]$/.test(s)&&!/(뭐|왜|어떻게|누구|어디|언제)/.test(s)){
       pendingSuggest=cleanTitle(s)||s;
       outs.push("\""+pendingSuggest+"\"을(를) 할 일로 추가할까요? \"응\"이라고 하면 넣어 둘게요.\n(일정이면 \"내일 3시 "+pendingSuggest+"\"처럼 시간을 붙여 주세요)");
-    }else outs.push(pick(["음, 그건 아직 잘 모르겠어요 🤔 \"도움말\"로 제가 할 수 있는 걸 확인해 보세요."+(!ai.on?"\n(지금은 AI가 연결되지 않은 기본 모드예요)":""),"제가 이해하기엔 조금 어려워요. 할 일이나 일정으로 말해 주시면 바로 처리할게요!"]));
+    }else outs.push("음, 그건 잘 모르겠어요 🤔"+(!ai.on?"\n지금은 **AI가 연결되지 않은 기본 모드**라서 정해진 말만 알아들어요. 위의 노란 안내를 눌러 AI를 켜 주세요!":""));
   }
-  ty.remove();botSay(outs.join("\n\n"));busy=false;renderChips();
+  botSay(outs.join("\n\n"));setBusy(false);renderChips();
 }
+/* 입력창 자동 높이 */
+function autoGrow(){const t=$("in");t.style.height="auto";t.style.height=Math.min(t.scrollHeight,120)+"px"}
+$("in").addEventListener("input",autoGrow);
+/* 사진 */
+function clearImage(){pendingImage=null;$("preview").hidden=true;$("preview").textContent=""}
+$("camBtn").onclick=()=>{if(!ai.on){toast("사진 인식은 AI가 연결돼야 쓸 수 있어요");return}$("camFile").click()};
+$("camFile").onchange=async e=>{
+  const f=e.target.files[0];e.target.value="";if(!f)return;
+  try{pendingImage=await shrinkImage(f);const pv=$("preview");pv.textContent="";
+    const im=document.createElement("img");im.src=pendingImage;const x=document.createElement("button");x.textContent="×";x.onclick=clearImage;
+    pv.append(im,Object.assign(document.createElement("span"),{textContent:"이 사진에 대해 말해 보세요 (예: 일정으로 넣어줘)"}),x);pv.hidden=false;$("in").focus()}
+  catch(err){toast(err.message)}
+};
 $("sendBtn").onclick=()=>send();
-$("in").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.isComposing){e.preventDefault();send()}});
+$("in").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing){e.preventDefault();send()}});
 function renderChips(){
-  const base=["브리핑","할 일 보여줘","오늘 일정","내일 언제 비어?","도움말"];
+  const base=ai.on?["오늘 브리핑해줘","이번 주 일정 정리해줘","할 일 우선순위 정해줘","오늘 날씨 어때?","내일 언제 비어?"]:["브리핑","할 일 보여줘","오늘 일정","내일 언제 비어?","도움말"];
   const c=pendingSuggest?["응","아니"]:base;
   const el=$("chips");el.textContent="";
   c.forEach(x=>{const b=document.createElement("button");b.className="chip";b.textContent=x;b.onclick=()=>send(x);el.appendChild(b)});
@@ -653,11 +742,22 @@ document.addEventListener("visibilitychange",()=>{if(!document.hidden){checkRemi
 const sheet=$("sheet");
 function updateAIUI(){
   const st=$("aiStatus");
-  st.textContent=!ai.checked?"✨ AI 연결 확인 중…":ai.on?"✨ Gemini AI 연결됨 — 자유롭게 말하면 알아서 처리해요":"⚙️ 기본 모드 (서버에 GEMINI_API_KEY가 없어요)";
+  st.textContent=!ai.checked?"✨ AI 연결 확인 중…":ai.on?"✨ AI 연결됨 · "+ai.model+(ai.search?" · 🔎 검색 가능":"")+"\n아무렇게나 말해도 알아서 처리해요":"⚙️ 기본 모드 — 서버에 GEMINI_API_KEY가 없어서 정해진 말만 알아들어요";
   st.className=ai.on?"on":"";
   $("aiDot").hidden=!ai.on;
+  $("aiBanner").hidden=!(ai.checked&&!ai.on);
+  $("camBtn").classList.toggle("off",!ai.on);
   $("in").placeholder=ai.on?"무엇이든 말해 보세요…":"Kitel에게 말하기…";
+  renderFacts();
 }
+function renderFacts(){
+  const box=$("factList");if(!box)return;box.textContent="";
+  if(!facts.length){box.appendChild(el("div","empty","아직 기억한 게 없어요. 대화하다 보면 취향·습관을 알아서 기억해요.")).style.padding="10px";return}
+  facts.forEach(f=>{const r=el("div","item");r.append(el("div","txt",f.text));const x=el("button","del","×");x.onclick=()=>{facts=facts.filter(y=>y!==f);save();renderFacts()};r.appendChild(x);box.appendChild(r)});
+}
+$("aiBanner").onclick=()=>{
+  botSay("## ✨ Kitel을 진짜 똑똑하게 만드는 법\n지금은 AI 키가 없어서 **기본 모드**예요. 아래 순서대로 한 번만 하면 돼요.\n\n1. https://aistudio.google.com/apikey 에서 **API 키 만들기** → 복사\n2. Google Cloud 콘솔 → **Cloud Run** → **kitel** 서비스 클릭\n3. 위쪽 **새 버전 수정 및 배포**\n4. **변수 및 보안 비밀** 탭 → **변수 추가**\n   이름 `GEMINI_API_KEY` / 값: 복사한 키\n5. 맨 아래 **배포** → 1~2분 뒤 이 페이지 새로고침\n\n켜지면 오른쪽 위 로고에 ✨가 붙어요!");
+};
 $("menuBtn").onclick=()=>{updateAIUI();$("optTts").textContent=opt.tts?"🔊 답변 읽어주기 켜짐":"🔈 답변 읽어주기 꺼짐";sheet.classList.add("on")};
 sheet.onclick=e=>{if(e.target===sheet)sheet.classList.remove("on")};
 $("optClose").onclick=()=>sheet.classList.remove("on");
@@ -668,27 +768,27 @@ $("optNotif").onclick=async()=>{
   const p=await Notification.requestPermission();toast(p==="granted"?"🔔 알림이 켜졌어요":"알림이 꺼져 있어요. 브라우저 설정에서 허용해 주세요");
 };
 $("optExport").onclick=()=>{
-  const blob=new Blob([JSON.stringify({v:VERSION,todos,events,memos,prof},null,1)],{type:"application/json"});
+  const blob=new Blob([JSON.stringify({v:VERSION,todos,events,memos,facts,prof},null,1)],{type:"application/json"});
   const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="kitel-backup-"+ymd(today())+".json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   sheet.classList.remove("on");toast("💾 백업 파일을 저장했어요");
 };
 $("optImport").onclick=()=>$("importFile").click();
 $("importFile").onchange=async e=>{
   const f=e.target.files[0];if(!f)return;
-  try{const o=JSON.parse(await f.text());if(!Array.isArray(o.todos)||!Array.isArray(o.events))throw 0;snap();todos=o.todos;events=o.events;memos=o.memos||[];if(o.prof)prof=o.prof;
+  try{const o=JSON.parse(await f.text());if(!Array.isArray(o.todos)||!Array.isArray(o.events))throw 0;snap();todos=o.todos;events=o.events;memos=o.memos||[];facts=o.facts||facts;if(o.prof)prof=o.prof;
     events.forEach(x=>{if(typeof x.notified!=="object"||!x.notified)x.notified={}});save();toast("📥 백업을 불러왔어요")}
   catch(_){toast("올바른 Kitel 백업 파일이 아니에요")}
   e.target.value="";sheet.classList.remove("on");
 };
 $("optClearChat").onclick=()=>{chat=[];saveChat();log.textContent="";sheet.classList.remove("on");botSay(briefing())};
 $("optClearDone").onclick=()=>{snap();const n=todos.filter(t=>t.done).length;todos=todos.filter(t=>!t.done);save();sheet.classList.remove("on");toast("완료한 할 일 "+n+"개 정리했어요")};
-$("optReset").onclick=()=>{if(!confirm("할 일·일정·메모·대화를 모두 지울까요?"))return;snap();todos=[];events=[];memos=[];chat=[];prof={name:""};save();saveChat();log.textContent="";sheet.classList.remove("on");botSay("처음부터 다시 시작해요! 🪁\n\n"+HELP)};
+$("optReset").onclick=()=>{if(!confirm("할 일·일정·메모·대화를 모두 지울까요?"))return;snap();todos=[];events=[];memos=[];facts=[];chat=[];prof={name:""};save();saveChat();log.textContent="";sheet.classList.remove("on");botSay("처음부터 다시 시작해요! 🪁\n\n"+HELP)};
 
 /* ================= 시작 ================= */
 const frag=document.createDocumentFragment();
 const recent=chat.slice(-80);
-recent.forEach(c=>{const d=bubble(c.who,c.text,c.ts,false);frag.appendChild(d)});log.appendChild(frag);
-if(!chat.length)botSay("안녕하세요! 저는 Kitel이에요 🪁\n할 일과 일정을 대신 챙겨 드릴게요.\n\n예) \"내일 오후 3시 치과\", \"매일 아침 8시 약\", \"장보기 해야 해\"\n🎤 버튼으로 말로 해도 돼요. \"도움말\"이라고 하면 전체 기능을 알려 드려요.");
+recent.forEach(c=>{const d=bubble(c.who,c.text,c.ts,false,{acts:c.acts,src:c.src,ai:c.ai,hadImg:c.hadImg});frag.appendChild(d)});log.appendChild(frag);
+if(!chat.length)botSay("안녕하세요! 저는 **Kitel**이에요 🪁\n할 일·일정·메모를 대신 챙기고, 궁금한 건 찾아서 알려 드려요.\n\n- \"내일 3시 치과 잡고 장보기도 넣어줘\"\n- \"이번 주 일정 보고 언제 운동하면 좋을지 짜줘\"\n- 📷 시간표·포스터 사진 → \"일정으로 넣어줘\"\n- 🎤 말로 해도 돼요");
 else if(Date.now()-chat[chat.length-1].ts>3*60*60*1000)botSay(briefing());
 scrollDown(true);renderChips();renderAll();checkReminders();
 checkAI();
